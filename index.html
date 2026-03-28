@@ -2,109 +2,148 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>iOS-Ready Prediction Model</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Prediction Model</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+
 <style>
-body { font-family: Arial; text-align: center; background:#0f172a; color:white; margin:0; }
-h1 { margin-top:15px; font-size:22px; }
-#timer { margin:10px; font-size:18px; color:#facc15; }
-#grid { display:grid; grid-template-columns: repeat(5, 1fr); gap:8px; padding:10px; }
-.box { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:10px; background:#1e293b; font-size:18px; }
+body { font-family: Arial; text-align:center; background:#0f172a; color:white; }
+.grid { display:grid; grid-template-columns:repeat(5,70px); gap:10px; justify-content:center; margin-top:20px;}
+.box { width:70px; height:70px; display:flex; align-items:center; justify-content:center; border-radius:10px; font-size:18px; flex-direction:column;}
 .safe { background:#2563eb; }
 .bomb { background:#dc2626; }
-.predicted { outline:3px solid yellow; }
-.confidence { font-size:10px; margin-top:4px; color:#fff; }
-button { margin:10px; padding:10px; border:none; border-radius:8px; background:#22c55e; color:white; }
-#history { text-align:left; padding:10px; max-height:200px; overflow:auto; font-size:12px; }
+.predicted { outline:4px solid yellow; }
+button { margin:10px; padding:10px 20px; border:none; border-radius:6px; background:#22c55e; color:white; cursor:pointer;}
+#history { max-width:400px; margin:20px auto; text-align:left; }
 </style>
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="manifest" href="manifest.json">
 </head>
+
 <body>
-<h1>iOS-Ready 25-Box Prediction Model</h1>
+
+<h2>🔥 Smart Prediction Model</h2>
+<p>Auto updates every 10 minutes</p>
 <div id="timer"></div>
-<button onclick="manualReset()">Reset</button>
-<div id="grid"></div>
-<h3>Prediction History</h3>
+
+<div class="grid" id="grid"></div>
+
+<button onclick="generate()">Generate Now</button>
+
+<h3>📊 Prediction History</h3>
 <div id="history"></div>
+
 <script>
-let gridData = [];
-let prediction = [];
-let confidence = {};
-let historyLog = [];
-let memoryWeights = Array(25).fill(1);
-let countdown = 900;
-function generateGrid() {
-  let items = Array(20).fill('safe').concat(Array(5).fill('bomb'));
-  items.sort(() => Math.random() - 0.5);
-  gridData = items;
-  makePrediction();
-  evaluatePrediction();
-  renderGrid();
-}
-function makePrediction() {
-  let weighted = gridData.map((v,i)=>v==='safe'?memoryWeights[i]:0);
-  let selected=[];
-  for(let k=0;k<3;k++){
-    let total=weighted.reduce((a,b)=>a+b,0);
-    let r=Math.random()*total;
-    let sum=0;
-    for(let i=0;i<weighted.length;i++){
-      sum+=weighted[i];
-      if(r<=sum && !selected.includes(i)){
-        selected.push(i);
-        weighted[i]=0;
-        break;
-      }
+let interval = 600000;
+let history = JSON.parse(localStorage.getItem("history") || "[]");
+
+// weight system (smarter logic)
+let weights = Array(25).fill(1);
+
+function generate(){
+    let grid = document.getElementById("grid");
+    grid.innerHTML = "";
+
+    let boxes = Array(25).fill("safe");
+
+    // bombs
+    let bombIndexes = [];
+    while(bombIndexes.length < 5){
+        let i = Math.floor(Math.random()*25);
+        if(!bombIndexes.includes(i)) bombIndexes.push(i);
     }
-  }
-  prediction=selected;
-  prediction.forEach(i=>{confidence[i]=Math.min(100,Math.round(memoryWeights[i]*10));});
+    bombIndexes.forEach(i => boxes[i] = "bomb");
+
+    // smarter prediction using weights
+    let candidates = [];
+    boxes.forEach((b,i)=>{
+        if(b === "safe"){
+            candidates.push({index:i, weight:weights[i]});
+        }
+    });
+
+    candidates.sort((a,b)=>b.weight - a.weight);
+
+    let predicted = candidates.slice(0,3);
+
+    // confidence score
+    predicted.forEach(p=>{
+        p.confidence = (p.weight / Math.max(...weights) * 100).toFixed(0);
+    });
+
+    // update weights (learning)
+    predicted.forEach(p=>{
+        if(boxes[p.index] === "safe"){
+            weights[p.index] += 1;
+        } else {
+            weights[p.index] = Math.max(1, weights[p.index]-1);
+        }
+    });
+
+    // save history
+    history.unshift({
+        time:new Date().toLocaleTimeString(),
+        picks: predicted.map(p=>p.index),
+    });
+    history = history.slice(0,10);
+    localStorage.setItem("history", JSON.stringify(history));
+
+    // render grid
+    boxes.forEach((type,i)=>{
+        let div = document.createElement("div");
+        div.classList.add("box");
+
+        if(type === "safe"){
+            div.classList.add("safe");
+            div.innerHTML = "⭐";
+        } else {
+            div.classList.add("bomb");
+            div.innerHTML = "💣";
+        }
+
+        let found = predicted.find(p=>p.index === i);
+        if(found){
+            div.classList.add("predicted");
+            div.innerHTML += "<small>"+found.confidence+"%</small>";
+        }
+
+        grid.appendChild(div);
+    });
+
+    renderHistory();
 }
-function evaluatePrediction(){
-  let result=prediction.map(i=>gridData[i]==='safe');
-  prediction.forEach((i,idx)=>{
-    if(result[idx]) memoryWeights[i]+=0.5;
-    else memoryWeights[i]=Math.max(1,memoryWeights[i]-0.7);
-  });
-  historyLog.unshift({time:new Date().toLocaleTimeString(),prediction,result});
-  updateHistory();
+
+function renderHistory(){
+    let h = document.getElementById("history");
+    h.innerHTML = history.map(item => 
+        "<div>⏱ "+item.time+" → Picks: "+item.picks.join(", ")+"</div>"
+    ).join("");
 }
-function updateHistory(){
-  const div=document.getElementById('history');
-  div.innerHTML=historyLog.slice(0,20).map(h=>
-    `<div>[${h.time}] Picks: ${h.prediction.join(', ')} | Result: ${h.result.map(r=>'✔':'✖').join(' ')}</div>`
-  ).join('');
+
+// timer
+function startTimer(){
+    let time = interval/1000;
+    setInterval(()=>{
+        let m = Math.floor(time/60);
+        let s = time%60;
+        document.getElementById("timer").innerText = "Next update: "+m+"m "+s+"s";
+        time--;
+        if(time<0){
+            generate();
+            time = interval/1000;
+        }
+    },1000);
 }
-function renderGrid(){
-  const grid=document.getElementById('grid');
-  grid.innerHTML='';
-  gridData.forEach((item,index)=>{
-    const div=document.createElement('div');
-    div.classList.add('box');
-    if(item==='safe'){div.classList.add('safe'); div.innerHTML='★';}
-    else{div.classList.add('bomb'); div.innerHTML='💣';}
-    if(prediction.includes(index)){
-      div.classList.add('predicted');
-      let conf=document.createElement('div');
-      conf.className='confidence';
-      conf.innerText=confidence[index]+'%';
-      div.appendChild(conf);
-    }
-    grid.appendChild(div);
-  });
+
+// PWA service worker
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
 }
-function updateTimer(){
-  const m=Math.floor(countdown/60);
-  const s=countdown%60;
-  document.getElementById('timer').textContent=`Next update in: ${m}:${s.toString().padStart(2,'0')}`;
-  if(countdown<=0){generateGrid(); countdown=900;} else{countdown--;}
-}
-function manualReset(){generateGrid(); countdown=900;}
-setInterval(updateTimer,1000);
-generateGrid();
+
+generate();
+startTimer();
 </script>
+
 </body>
 </html>
